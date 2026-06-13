@@ -1,12 +1,14 @@
 package main
 
 import (
+	"archive/zip"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // FormHandler serves the HTML file upload form
@@ -54,8 +56,78 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("File uploaded successfully: %s\n", handler.Filename)
-	fmt.Fprintf(w, "File uploaded successfully: %s\n", handler.Filename)
+	if strings.HasSuffix(strings.ToLower(handler.Filename), ".zip") {
+		// implement Unzip here
+		log.Printf("Zip file uploaded successfully: %s\n", handler.Filename)
+		fmt.Fprintf(w, "Zip file uploaded successfully: %s\n", handler.Filename)
+	} else {
+		log.Printf("File uploaded successfully: %s\n", handler.Filename)
+		fmt.Fprintf(w, "File uploaded successfully: %s\n", handler.Filename)
+	}
+}
+
+func Unzip(src, dest string) error {
+	r, err := zip.OpenReader(src)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := r.Close(); err != nil {
+			panic(err)
+		}
+	}()
+
+	os.MkdirAll(dest, 0755)
+
+	// Closure to address file descriptors issue with all the deferred .Close() methods
+	extractAndWriteFile := func(f *zip.File) error {
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if err := rc.Close(); err != nil {
+				panic(err)
+			}
+		}()
+
+		path := filepath.Join(dest, f.Name)
+
+		// Check for ZipSlip (Directory traversal)
+		if !strings.HasPrefix(path, filepath.Clean(dest)+string(os.PathSeparator)) {
+			return fmt.Errorf("illegal file path: %s", path)
+		}
+
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(path, f.Mode())
+		} else {
+			os.MkdirAll(filepath.Dir(path), f.Mode())
+			f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err := f.Close(); err != nil {
+					panic(err)
+				}
+			}()
+
+			_, err = io.Copy(f, rc)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	for _, f := range r.File {
+		err := extractAndWriteFile(f)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func main() {

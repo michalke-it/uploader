@@ -9,6 +9,8 @@
 <body>
     <h1>Upload a File</h1>
     <form action="/upload" method="post" enctype="multipart/form-data">
+        If you want to upload a complete folder (e.g. for audiobooks or audio/ebook combinations),
+        zip it first.<br> Example: "zip EBOOKNAME EBOOKFOLDER" <br>
         <label for="file">Choose a file:</label>
         <input type="file" id="file" name="file" required>
         <br><br>
